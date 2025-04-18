@@ -19,6 +19,7 @@ import (
 	"encoding"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"regexp"
 	"sort"
@@ -388,14 +389,48 @@ func (e *encoder) timev(tag string, in reflect.Value) {
 	e.emitScalar(s, "", tag, yaml_PLAIN_SCALAR_STYLE, nil, nil, nil, nil)
 }
 
+func hasDecimal(f float64) bool {
+	return math.Mod(f, 1) != 0
+}
+func getDecimalExponent(f float64) int {
+	if f == 0 {
+		return 0
+	}
+	return int(math.Floor(math.Log10(math.Abs(f))))
+}
+
+func getDecimalParts(f float64) (mantissa float64, exponent int) {
+	if f == 0 {
+		return 0, 0
+	}
+
+	absF := math.Abs(f)
+	exponent = int(math.Floor(math.Log10(absF)))
+	mantissa = f / math.Pow10(exponent)
+
+	return mantissa, exponent
+}
+
 func (e *encoder) floatv(tag string, in reflect.Value) {
 	// Issue #352: When formatting, use the precision of the underlying value
 	precision := 64
 	if in.Kind() == reflect.Float32 {
 		precision = 32
 	}
-
-	s := strconv.FormatFloat(in.Float(), 'g', -1, precision)
+	prec := -1
+	f := byte('g')
+	v := in.Float()
+	if hasDecimal(v) {
+		mantissa, exponent := getDecimalParts(v)
+		if exponent <= -4 && !hasDecimal(mantissa) {
+			prec = 1
+			f = byte('e')
+		}
+	} else {
+		prec = 1
+		f = byte('f')
+	}
+	s := strconv.FormatFloat(v, f, prec, precision)
 	switch s {
 	case "+Inf":
 		s = ".inf"
